@@ -34,27 +34,31 @@ W_res_np = W_res_np * (0.95 / radius)
 W_in = torch.tensor(W_in_np, dtype=torch.float32).to(device)
 W_res = torch.tensor(W_res_np, dtype=torch.float32).to(device)
 
-# 4. 特徴量抽出関数 (Mean Pooling版)
+# 4. 特徴量抽出関数 (ピークホールド / Max Pooling版)
 def extract_reservoir_features_gpu(X_raw):
     X_pt = torch.tensor(X_raw, dtype=torch.float32).to(device)
     n_samples, n_steps = X_pt.shape
     
-    # 全時間ステップの状態をまとめて保存するテンソルを用意
-    # サイズ: (データ数, 時間ステップ数, ノード数)
-    all_states = torch.zeros((n_samples, n_steps, n_res), dtype=torch.float32, device=device)
     x_state = torch.zeros((n_samples, n_res), dtype=torch.float32, device=device)
     
-    for t in range(n_steps):
-        u_t = X_pt[:, t].reshape(-1, 1)
-        x_state = torch.tanh(torch.matmul(u_t, W_in.T) + torch.matmul(x_state, W_res.T))
-        
-        # 毎ステップの波紋の状態を記録していく
-        all_states[:, t, :] = x_state
-        
-    # ★時間方向 (dim=1) で平均をとる
-    mean_states = torch.mean(all_states, dim=1)
+    # 振動の「最大値（ピーク）」を記録するためのテンソル
+    # tanh関数の最小値は-1なので、初期値を-1.0にしておく
+    max_states = torch.full((n_samples, n_res), -1.0, dtype=torch.float32, device=device)
     
-    return mean_states.cpu().numpy()
+    alpha = 0.3
+    input_scale = 0.01
+    
+    for t in range(n_steps):
+        u_t = X_pt[:, t].reshape(-1, 1) * input_scale
+        
+        # 物理モデル: (1 - α)*過去の状態 + α*新しい応答
+        update = torch.tanh(torch.matmul(u_t, W_in.T) + torch.matmul(x_state, W_res.T))
+        x_state = (1 - alpha) * x_state + alpha * update
+        
+        # 平均するのではなく、各ノードの「最も波が高かった瞬間の値」を上書き保存する
+        max_states = torch.maximum(max_states, x_state)
+        
+    return max_states.cpu().numpy()
 
 # 5. 実行と時間計測
 print("Extracting features from training data (GPU)...")
