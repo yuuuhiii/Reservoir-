@@ -16,23 +16,20 @@ test_data = pd.read_csv(test_url, sep='\t', header=None).values
 y_train, X_train_raw = train_data[:, 0], train_data[:, 1:]
 y_test, X_test_raw = test_data[:, 0], test_data[:, 1:]
 
-# 2. デバイスの設定 (ここで 'cuda' と出れば成功！)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-# 3. リザーバーの構築 (GPUのパワーを見るため、ノード数を2000に設定)
-n_res = 2000
-print(f"Building Reservoir with {n_res} nodes...")
-np.random.seed(42)
-W_in_np = np.random.rand(n_res, 1) * 2 - 1
-W_res_np = np.random.rand(n_res, n_res) * 2 - 1
+n_res = 10000
+print(f"Building Reservoir with {n_res} nodes on GPU...")
+torch.manual_seed(42)
 
-radius = np.max(np.abs(np.linalg.eigvals(W_res_np)))
-W_res_np = W_res_np * (0.95 / radius)
+# CPUを一切経由せず、最初からRTX 4060のVRAM上に生成する
+W_in = (torch.rand((n_res, 1), device=device) * 2 - 1)
+W_res = (torch.rand((n_res, n_res), device=device) * 2 - 1)
 
-# NumPyの配列を、GPUで計算できるPyTorchのテンソルに変換
-W_in = torch.tensor(W_in_np, dtype=torch.float32).to(device)
-W_res = torch.tensor(W_res_np, dtype=torch.float32).to(device)
+# 重い固有値計算を捨て、ランダム行列の理論値( √(N/3) )を使用する
+theoretical_radius = np.sqrt(n_res / 3.0)
+W_res = W_res * (0.95 / theoretical_radius)
 
 # 4. 特徴量抽出関数 (ピークホールド / Max Pooling版)
 def extract_reservoir_features_gpu(X_raw):
@@ -73,7 +70,7 @@ print(f" -> Test Extraction Time: {time.time() - start_time:.2f} seconds")
 
 # 6. 出力層の学習と評価 (ここはCPUで一瞬で終わります)
 print("Training the readout layer...")
-classifier = RidgeClassifier(alpha=1e-3)
+classifier = RidgeClassifier(alpha=0.1)
 classifier.fit(X_train_features, y_train)
 
 predictions = classifier.predict(X_test_features)
