@@ -48,12 +48,12 @@ for i in range(DATA_LENGTH):
     
     try:
         vals = [int(v) for v in line.split(',')]
-        if len(vals) == 4:
+        if len(vals) == 6:
             states.append(vals)
         else:
-            states.append([0, 0, 0, 0]) # エラー時のダミー
+            states.append([0, 0, 0, 0, 0, 0])
     except:
-        states.append([0, 0, 0, 0])
+        states.append([0, 0, 0, 0, 0, 0])
         
     # 進捗表示
     if (i + 1) % 100 == 0:
@@ -61,6 +61,9 @@ for i in range(DATA_LENGTH):
 
 ser.close()
 print("✅ データ収集完了！")
+# 物理リザバーの「脳波」を直接確認する
+plt.plot(states[10:110]) # 最初の100歩分の全6ノードの動きを表示
+plt.show()
 
 # --- AIの学習と評価（Readout学習） ---
 print("🧠 scikit-learnで学習と採点を行っています...")
@@ -73,7 +76,7 @@ X_test = states[TRAIN_LEN:]
 y_test = y_target[TRAIN_LEN:]
 
 # Ridge回帰（線形モデル）で学習
-model = Ridge(alpha=10.0)
+model = Ridge(alpha=0.1)
 model.fit(X_train, y_train)
 
 # テストデータで予測
