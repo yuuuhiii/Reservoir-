@@ -1,12 +1,14 @@
 /*
- * NARMA10 連続駆動スケッチ (Arduino Leonardo)
- * 入力をバッチ受信し, 定常を待たず2ms間隔で流す = フェーディングメモリ
+ * NARMA10 連続駆動 + 複数タイミング観測 (Arduino Leonardo)
+ * 連続駆動を維持したまま1入力内で複数タイミング読み, 次元を増やす.
  */
 
 const int PIN_PWM = 9;
 const int NODES[4] = {A0, A1, A2, A3};
 
-const int STEP_INTERVAL_MS = 6;   // 短いほど記憶が残る
+const int SAMPLE_OFFSETS_MS[] = {1, 3, 6};   // 4ノード×3タイミング=12次元
+const int N_SAMP = sizeof(SAMPLE_OFFSETS_MS) / sizeof(SAMPLE_OFFSETS_MS[0]);
+
 const int MAX_BATCH = 64;
 int pwmBuf[MAX_BATCH];
 
@@ -34,17 +36,19 @@ void loop() {
 
     for (int i = 0; i < n; i++) {
       analogWrite(PIN_PWM, pwmBuf[i]);
-      delay(STEP_INTERVAL_MS);
 
-      int v0 = analogRead(NODES[0]);
-      int v1 = analogRead(NODES[1]);
-      int v2 = analogRead(NODES[2]);
-      int v3 = analogRead(NODES[3]);
-
-      Serial.print(v0); Serial.print(",");
-      Serial.print(v1); Serial.print(",");
-      Serial.print(v2); Serial.print(",");
-      Serial.println(v3);
+      int prev = 0;
+      String out = "";
+      for (int k = 0; k < N_SAMP; k++) {
+        int wait = SAMPLE_OFFSETS_MS[k] - prev;
+        if (wait > 0) delay(wait);
+        prev = SAMPLE_OFFSETS_MS[k];
+        for (int nn = 0; nn < 4; nn++) {
+          out += analogRead(NODES[nn]);
+          if (!(k == N_SAMP - 1 && nn == 3)) out += ",";
+        }
+      }
+      Serial.println(out);
     }
   }
 }
